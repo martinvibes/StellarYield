@@ -142,6 +142,7 @@ export async function executeContractCall(
   method: string,
   args: StellarSdk.xdr.ScVal[],
   onStatus?: (status: TxStatus) => void,
+  useFeeBump: boolean = false
 ): Promise<TxResult> {
   try {
     onStatus?.("building");
@@ -150,8 +151,20 @@ export async function executeContractCall(
     onStatus?.("signing");
     const signedXdr = await signWithFreighter(xdr);
 
+    let finalXdr = signedXdr;
+    if (useFeeBump) {
+      onStatus?.("submitting");
+      const resp = await fetch('/api/relayer/fee-bump', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ innerTxXdr: signedXdr })
+      });
+      const { feeBumpXdr } = await resp.json();
+      finalXdr = feeBumpXdr;
+    }
+
     onStatus?.("submitting");
-    const result = await submitAndPoll(signedXdr);
+    const result = await submitAndPoll(finalXdr);
 
     onStatus?.(result.success ? "success" : "error");
     return result;
@@ -175,6 +188,7 @@ export async function deposit(
   userAddress: string,
   amount: bigint,
   onStatus?: (status: TxStatus) => void,
+  useFeeBump: boolean = true // Sponsor first deposit by default as per issue
 ): Promise<TxResult> {
   return executeContractCall(
     userAddress,
@@ -184,6 +198,7 @@ export async function deposit(
       StellarSdk.nativeToScVal(amount, { type: "i128" }),
     ],
     onStatus,
+    useFeeBump
   );
 }
 

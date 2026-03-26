@@ -27,7 +27,14 @@ enum DataKey {
     DexRouter,
     TotalHarvested,
     Keeper,
+    Paused,
+    Timelock(Symbol), // Key for different timelocked actions
+    PendingAdmin,
+    Oracle,
 }
+
+mod admin;
+mod oracle;
 
 // ── Errors ──────────────────────────────────────────────────────────────
 
@@ -41,6 +48,9 @@ pub enum VaultError {
     InsufficientShares = 4,
     Unauthorized = 5,
     ZeroSupply = 6,
+    Paused = 7,
+    TimelockActive = 8,
+    InvalidPrice = 9,
 }
 
 // ── Contract ────────────────────────────────────────────────────────────
@@ -96,6 +106,9 @@ impl YieldVault {
     pub fn deposit(env: Env, from: Address, amount: i128) -> Result<i128, VaultError> {
         Self::require_init(&env)?;
         from.require_auth();
+        if Self::is_paused(&env) {
+            return Err(VaultError::Paused);
+        }
 
         if amount <= 0 {
             return Err(VaultError::ZeroAmount);
@@ -104,6 +117,9 @@ impl YieldVault {
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let total_shares: i128 = env.storage().instance().get(&DataKey::TotalShares).unwrap();
         let total_assets: i128 = env.storage().instance().get(&DataKey::TotalAssets).unwrap();
+
+        // Get secure price for validation (flash-loan resistance)
+        let _price = Self::get_secure_price(&env)?;
 
         // Calculate shares to mint
         let shares = if total_shares == 0 {
@@ -179,6 +195,9 @@ impl YieldVault {
             return Err(VaultError::ZeroSupply);
         }
 
+        // Get secure price for validation
+        let _price = Self::get_secure_price(&env)?;
+
         let amount = (shares * total_assets) / total_shares;
 
         // Transfer tokens to user
@@ -223,6 +242,9 @@ impl YieldVault {
     ) -> Result<(), VaultError> {
         Self::require_init(&env)?;
         caller.require_auth();
+        if Self::is_paused(&env) {
+            return Err(VaultError::Paused);
+        }
 
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         if caller != admin {

@@ -6,6 +6,30 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+import rateLimit from 'express-rate-limit';
+
+const relayerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 3, // Each IP/Wallet is limited to 3 fee bumps per window (as per issue)
+  message: 'Too many requests, please try again later.'
+});
+
+import { signFeeBump } from './relayer/relayer';
+app.post('/api/relayer/fee-bump', relayerLimiter, signFeeBump);
+
+import { startIndexer } from './indexer/indexer';
+startIndexer().catch(console.error);
+
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
+
+app.get('/api/events', async (req, res) => {
+  const events = await prisma.event.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 10
+  });
+  res.json(events);
+});
 
 // Mock Data for Vaults
 const mockYields = [
