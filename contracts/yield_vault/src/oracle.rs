@@ -2,6 +2,7 @@ use crate::{DataKey, VaultError, YieldVault};
 use soroban_sdk::{contractclient, contracttype, Address, Env, Vec};
 
 #[contractclient(name = "OracleClient")]
+#[allow(dead_code)]
 pub trait OracleInterface {
     fn get_price(env: Env, asset: Address) -> Option<(i128, u64)>;
 }

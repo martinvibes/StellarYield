@@ -1,18 +1,6 @@
 use crate::{DataKey, VaultError, YieldVault};
 use soroban_sdk::{symbol_short, Address, Env};
 
-pub trait AdminActions {
-    fn emergency_pause(env: Env, admin: Address) -> Result<(), VaultError>;
-    fn emergency_unpause(env: Env, admin: Address) -> Result<(), VaultError>;
-    fn rescue_funds(
-        env: Env,
-        admin: Address,
-        target: Address,
-        amount: i128,
-    ) -> Result<(), VaultError>;
-    fn set_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), VaultError>;
-}
-
 impl YieldVault {
     pub fn emergency_pause(env: Env, admin: Address) -> Result<(), VaultError> {
         Self::require_admin(&env, &admin)?;
@@ -76,7 +64,6 @@ impl YieldVault {
         Self::require_admin(&env, &admin)?;
 
         let now = env.ledger().timestamp();
-        let timelock_key = soroban_sdk::Symbol::new(&env, "set_admin");
 
         // If there's already a pending admin, check timelock
         let pending_admin: Option<(Address, u64)> =
