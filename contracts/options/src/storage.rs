@@ -23,7 +23,7 @@ pub struct OptionData {
     pub option_type: OptionType,
     pub underlying_asset: Address,
     pub quote_asset: Address,
-    pub strike_price: i128, // Scaled by 1e7
+    pub strike_price: i128,   // Scaled by 1e7
     pub expiration_time: u64, // Unix timestamp
     pub collateral_amount: i128,
     pub exercised: bool,
@@ -51,11 +51,16 @@ pub fn write_oracle(e: &Env, id: &Address) {
 }
 
 pub fn read_option_counter(e: &Env) -> u32 {
-    e.storage().instance().get(&DataKey::OptionCounter).unwrap_or(0)
+    e.storage()
+        .instance()
+        .get(&DataKey::OptionCounter)
+        .unwrap_or(0)
 }
 
 pub fn write_option_counter(e: &Env, counter: u32) {
-    e.storage().instance().set(&DataKey::OptionCounter, &counter);
+    e.storage()
+        .instance()
+        .set(&DataKey::OptionCounter, &counter);
 }
 
 pub fn read_option(e: &Env, id: u32) -> OptionData {

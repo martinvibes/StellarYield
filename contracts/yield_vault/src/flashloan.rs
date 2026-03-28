@@ -49,13 +49,16 @@ impl YieldVault {
     /// 5. Revert entire transaction if validation fails
     ///
     /// # Arguments
-    /// * `initiator` — Address initiating the flash loan (must authorize)
-    /// * `receiver` — Contract address that will receive and repay the loan
-    /// * `amount` — Amount to borrow
-    /// * `params` — Arbitrary data to pass to receiver
+    /// * `initiator` - Address initiating the flash loan (must authorize)
+    /// * `receiver`  - Contract address that will receive and repay the loan
+    /// * `amount`    - Amount to borrow
+    /// * `params`    - Arbitrary data to pass to receiver
     ///
     /// # Returns
     /// The premium fee collected
+    ///
+    /// # Invariants
+    /// balance_after >= balance_before + fee
     pub fn flash_loan_impl(
         env: &Env,
         initiator: &Address,

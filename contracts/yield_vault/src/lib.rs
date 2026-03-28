@@ -38,6 +38,7 @@ mod fees;
 mod flashloan;
 mod keeper;
 mod oracle;
+mod verification;
 
 // ── Errors ──────────────────────────────────────────────────────────────
 
@@ -100,12 +101,19 @@ impl YieldVault {
     /// subsequent deposits receive shares proportional to their
     /// contribution relative to total vault assets.
     ///
+    /// Deposit `amount` of the vault token and receive proportional vault
+    /// shares in return.
+    ///
     /// # Arguments
-    /// * `from`   — The depositor's address (must authorise the call).
-    /// * `amount` — The quantity of tokens to deposit (must be > 0).
+    /// * `from`   - The depositor's address (must authorise the call).
+    /// * `amount` - The quantity of tokens to deposit (must be > 0).
     ///
     /// # Returns
     /// The number of vault shares minted for this deposit.
+    ///
+    /// # Security
+    /// Shares are calculated as `(amount * total_shares) / total_assets`.
+    /// First deposit is 1:1.
     pub fn deposit(env: Env, from: Address, amount: i128) -> Result<i128, VaultError> {
         Self::require_init(&env)?;
         from.require_auth();
@@ -168,11 +176,14 @@ impl YieldVault {
     /// underlying tokens.
     ///
     /// # Arguments
-    /// * `to`     — The recipient address (must authorise the call).
-    /// * `shares` — Number of vault shares to redeem (must be > 0).
+    /// * `to`     - The recipient address (must authorise the call).
+    /// * `shares` - Number of vault shares to redeem (must be > 0).
     ///
     /// # Returns
     /// The amount of underlying tokens transferred to the user.
+    ///
+    /// # Security
+    /// Replaces standard zero-check with error. Uses secure price from oracle.
     pub fn withdraw(env: Env, to: Address, shares: i128) -> Result<i128, VaultError> {
         Self::require_init(&env)?;
         to.require_auth();
@@ -233,10 +244,18 @@ impl YieldVault {
     /// contract admin (strategy address). The strategy off-chain logic
     /// determines *where* to allocate; this function executes the transfer.
     ///
+    /// Move `amount` tokens from the vault to a target protocol address.
+    ///
     /// # Arguments
-    /// * `caller` — Must be the admin address.
-    /// * `target` — The protocol / pool address to send funds to.
-    /// * `amount` — Amount of tokens to move.
+    /// * `caller` - Must be the admin address.
+    /// * `target` - The protocol / pool address to send funds to.
+    /// * `amount` - Amount of tokens to move.
+    ///
+    /// # Security
+    /// Only the admin can call this. Assets are tracked to reflect output.
+    ///
+    /// # Invariants
+    /// rebalance_amount <= total_assets
     pub fn rebalance(
         env: Env,
         caller: Address,
@@ -349,9 +368,16 @@ impl YieldVault {
     }
 
     /// Harvest rewards, swap for base asset, and auto-compound.
-    /// Callable by admin, the legacy keeper, or any registered keeper node.
-    /// Registered keepers receive a small fee (in base tokens) to cover gas
-    /// costs and provide a profit incentive for trustless execution.
+    ///
+    /// # Arguments
+    /// * `caller`         - Admin, legacy keeper, or registered keeper.
+    /// * `min_amount_out` - Slippage protection for DEX swap.
+    ///
+    /// # Returns
+    /// Net auto-compounded amount.
+    ///
+    /// # Security
+    /// Re-entrancy protected via Soroban environment.
     pub fn harvest(env: Env, caller: Address, min_amount_out: i128) -> Result<i128, VaultError> {
         Self::require_init(&env)?;
         caller.require_auth();
