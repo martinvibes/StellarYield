@@ -23,3 +23,34 @@ model IndexerState {
   id              String   @id @default("singleton")
   lastLedger      Int
 }
+
+model VaultBalance {
+  id              String   @id @default(uuid())
+  walletAddress   String   @unique
+  tvl             Float    @default(0)
+  totalYield      Float    @default(0)
+  updatedAt       DateTime @updatedAt
+}
+
+model Notification {
+  id              String   @id @default(uuid())
+  walletAddress   String
+  type            String   // DEPOSIT, WITHDRAWAL, ANNOUNCEMENT, HARVEST
+  title           String
+  message         String
+  isRead          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+}
+
+model OnRampTransaction {
+  id              String   @id @default(uuid())
+  walletAddress   String
+  provider        String   // STRIPE, MOONPAY
+  status          String   // PENDING, COMPLETED, FAILED
+  amountFiat      Float
+  currency        String
+  amountUsdc      Float    @default(0)
+  providerTxId    String   @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

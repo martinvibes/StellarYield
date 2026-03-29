@@ -4,6 +4,10 @@ import rateLimit from "express-rate-limit";
 import { predictApy, HistoricalDataPoint } from "./analytics/apyPredictor";
 import { signFeeBump } from "./relayer/relayer";
 import yieldsRouter from "./routes/yields";
+import leaderboardRouter from "./routes/leaderboard";
+import notificationsRouter from "./routes/notifications";
+import healthRouter from "./routes/health";
+import onrampRouter from "./routes/onramp";
 import {
   createAuthChallenge,
   verifyAuthChallenge,
@@ -50,6 +54,10 @@ export function createApp() {
 
   app.post("/api/relayer/fee-bump", relayerLimiter, signFeeBump);
   app.use("/api/yields", yieldsRouter);
+  app.use("/api/leaderboard", leaderboardRouter);
+  app.use("/api/notifications", notificationsRouter);
+  app.use("/api/health", healthRouter);
+  app.use("/api/onramp", onrampRouter);
 
   app.get("/api/events", async (req: Request, res: Response) => {
     void req;

@@ -12,7 +12,11 @@ import PortfolioPage from "./components/portfolio/PortfolioPage";
 import GovernanceDashboard from "./pages/governance/GovernanceDashboard";
 import QuestsDashboard from "./pages/quests/QuestsDashboard";
 import ConnectWalletButton from "./components/wallet/ConnectWalletButton";
+import NotificationBell from "./components/Navigation/NotificationBell";
+import Leaderboard from "./pages/leaderboard/Leaderboard";
+import OnRampModal from "./features/onramp/OnRampModal";
 import { useWallet } from "./context/useWallet";
+import { useState } from "react";
 import {
   LayoutDashboard,
   BarChart3,
@@ -21,15 +25,25 @@ import {
   PieChart,
   ShieldCheck,
   Trophy,
+  CreditCard,
 } from "lucide-react";
 import "./index.css";
 
 // Layout Component
 const RootLayout = () => {
-  const { isConnected } = useWallet();
+  const { isConnected, walletAddress } = useWallet();
+  const [isOnRampOpen, setIsOnRampOpen] = useState(false);
 
   return (
     <div className="min-h-screen flex flex-col">
+      {/* On-Ramp Modal */}
+      {isConnected && walletAddress && (
+        <OnRampModal 
+          isOpen={isOnRampOpen} 
+          onClose={() => setIsOnRampOpen(false)} 
+          walletAddress={walletAddress} 
+        />
+      )}
       {/* Navigation Bar */}
       <nav className="glass-panel mx-4 mt-6 px-6 py-4 flex justify-between items-center mb-8 sticky top-4 z-50 shadow-2xl">
         <div className="flex items-center gap-3">
@@ -88,9 +102,26 @@ const RootLayout = () => {
           >
             <Trophy size={18} /> Quests
           </Link>
+          <Link
+            to="/leaderboard"
+            className="hover:text-white transition-colors flex items-center gap-2"
+          >
+            <Trophy size={18} /> Leaderboard
+          </Link>
+          {isConnected && (
+            <button
+              onClick={() => setIsOnRampOpen(true)}
+              className="px-4 py-2 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-lg shadow-indigo-500/20 active:scale-95"
+            >
+              <CreditCard size={14} /> Buy USDC
+            </button>
+          )}
         </div>
 
-        <ConnectWalletButton />
+        <div className="flex items-center gap-4">
+          <NotificationBell />
+          <ConnectWalletButton />
+        </div>
       </nav>
 
       {/* Main Content Area */}
@@ -135,9 +166,14 @@ const router = createBrowserRouter([
         path: "/quests",
         element: <QuestsDashboard />,
       },
+      {
+        path: "/leaderboard",
+        element: <Leaderboard />,
+      },
     ],
   },
 ]);
+
 
 function App() {
   return <RouterProvider router={router} />;
