@@ -10,6 +10,9 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Bytes,
     Env, IntoVal, Symbol, Val,
 };
+#[path = "../../interfaces/vault_standard.rs"]
+mod vault_standard;
+use vault_standard::VaultStandard;
 
 // ── Storage keys ────────────────────────────────────────────────────────
 
@@ -55,6 +58,7 @@ pub enum VaultError {
     Paused = 7,
     TimelockActive = 8,
     InvalidPrice = 9,
+    SlippageExceeded = 10,
 }
 
 // ── Contract ────────────────────────────────────────────────────────────
@@ -107,6 +111,7 @@ impl YieldVault {
     /// # Arguments
     /// * `from`   - The depositor's address (must authorise the call).
     /// * `amount` - The quantity of tokens to deposit (must be > 0).
+    /// * `min_shares_out` - Minimum acceptable shares minted, otherwise revert.
     ///
     /// # Returns
     /// The number of vault shares minted for this deposit.
@@ -114,7 +119,12 @@ impl YieldVault {
     /// # Security
     /// Shares are calculated as `(amount * total_shares) / total_assets`.
     /// First deposit is 1:1.
-    pub fn deposit(env: Env, from: Address, amount: i128) -> Result<i128, VaultError> {
+    pub fn deposit(
+        env: Env,
+        from: Address,
+        amount: i128,
+        min_shares_out: i128,
+    ) -> Result<i128, VaultError> {
         Self::require_init(&env)?;
         from.require_auth();
         if Self::is_paused(&env) {
@@ -132,15 +142,13 @@ impl YieldVault {
         // Get secure price for validation (flash-loan resistance)
         let _price = Self::get_secure_price(&env)?;
 
-        // Calculate shares to mint
-        let shares = if total_shares == 0 {
-            amount // First deposit: 1:1
-        } else {
-            (amount * total_shares) / total_assets
-        };
+        let shares = Self::preview_deposit(env.clone(), amount)?;
 
         if shares <= 0 {
             return Err(VaultError::ZeroAmount);
+        }
+        if shares < min_shares_out {
+            return Err(VaultError::SlippageExceeded);
         }
 
         // Transfer tokens from depositor to vault
@@ -179,6 +187,7 @@ impl YieldVault {
     ///   (typically a router or Zap contract).
     /// * `beneficiary` — Receives the newly minted vault shares.
     /// * `amount`      — Amount of vault token to move from `payer` into the vault.
+    /// * `min_shares_out` — Minimum acceptable shares minted, otherwise revert.
     ///
     /// # Returns
     ///
@@ -194,6 +203,7 @@ impl YieldVault {
         payer: Address,
         beneficiary: Address,
         amount: i128,
+        min_shares_out: i128,
     ) -> Result<i128, VaultError> {
         Self::require_init(&env)?;
         payer.require_auth();
@@ -211,14 +221,13 @@ impl YieldVault {
 
         let _price = Self::get_secure_price(&env)?;
 
-        let shares = if total_shares == 0 {
-            amount
-        } else {
-            (amount * total_shares) / total_assets
-        };
+        let shares = Self::preview_deposit(env.clone(), amount)?;
 
         if shares <= 0 {
             return Err(VaultError::ZeroAmount);
+        }
+        if shares < min_shares_out {
+            return Err(VaultError::SlippageExceeded);
         }
 
         let client = token::Client::new(&env, &token_addr);
@@ -230,12 +239,10 @@ impl YieldVault {
             .get(&DataKey::Shares(beneficiary.clone()))
             .unwrap_or(0);
 
-        env.storage()
-            .persistent()
-            .set(
-                &DataKey::Shares(beneficiary.clone()),
-                &(beneficiary_shares + shares),
-            );
+        env.storage().persistent().set(
+            &DataKey::Shares(beneficiary.clone()),
+            &(beneficiary_shares + shares),
+        );
         env.storage()
             .instance()
             .set(&DataKey::TotalShares, &(total_shares + shares));
@@ -293,7 +300,7 @@ impl YieldVault {
         // Get secure price for validation
         let _price = Self::get_secure_price(&env)?;
 
-        let amount = (shares * total_assets) / total_shares;
+        let amount = Self::convert_to_assets(env.clone(), shares)?;
 
         // Transfer tokens to user
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -381,7 +388,12 @@ impl YieldVault {
     /// * `from`   — The sender of shares (must authorise).
     /// * `to`     — The recipient of shares.
     /// * `amount` — Number of shares to transfer.
-    pub fn transfer_shares(env: Env, from: Address, to: Address, amount: i128) -> Result<(), VaultError> {
+    pub fn transfer_shares(
+        env: Env,
+        from: Address,
+        to: Address,
+        amount: i128,
+    ) -> Result<(), VaultError> {
         from.require_auth();
         if amount <= 0 {
             return Err(VaultError::ZeroAmount);
@@ -633,6 +645,70 @@ impl YieldVault {
         Self::max_flash_amount(&env)
     }
 
+    /// Preview the number of assets that would be returned for withdrawing shares.
+    pub fn preview_withdraw(env: Env, shares: i128) -> Result<i128, VaultError> {
+        Self::require_init(&env)?;
+        if shares <= 0 {
+            return Err(VaultError::ZeroAmount);
+        }
+        let total_shares: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalShares)
+            .unwrap_or(0);
+        if total_shares == 0 {
+            return Err(VaultError::ZeroSupply);
+        }
+        let total_assets: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalAssets)
+            .unwrap_or(0);
+        Ok((shares * total_assets) / total_shares)
+    }
+
+    /// Preview the number of shares needed to withdraw a specific asset amount.
+    pub fn preview_redeem(env: Env, assets: i128) -> Result<i128, VaultError> {
+        Self::require_init(&env)?;
+        if assets <= 0 {
+            return Err(VaultError::ZeroAmount);
+        }
+        let total_shares: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalShares)
+            .unwrap_or(0);
+        let total_assets: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalAssets)
+            .unwrap_or(0);
+        if total_shares == 0 || total_assets == 0 {
+            return Ok(assets);
+        }
+        let numerator = assets * total_shares;
+        Ok((numerator + total_assets - 1) / total_assets)
+    }
+
+    /// Get the price per share in asset terms (1e18 scale).
+    pub fn share_price(env: Env) -> Result<i128, VaultError> {
+        Self::require_init(&env)?;
+        let total_shares: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalShares)
+            .unwrap_or(0);
+        if total_shares == 0 {
+            return Ok(1_000_000_000_000_000_000i128);
+        }
+        let total_assets: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalAssets)
+            .unwrap_or(0);
+        Ok((total_assets * 1_000_000_000_000_000_000i128) / total_shares)
+    }
+
     // ── Internal ────────────────────────────────────────────────────
 
     fn require_init(env: &Env) -> Result<(), VaultError> {
@@ -653,6 +729,143 @@ impl YieldVault {
             return Err(VaultError::Unauthorized);
         }
         Ok(())
+    }
+}
+
+impl VaultStandard for YieldVault {
+    fn total_assets(env: Env) -> Result<i128, VaultError> {
+        Self::require_init(&env)?;
+        Ok(env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalAssets)
+            .unwrap_or(0))
+    }
+
+    fn convert_to_shares(env: Env, assets: i128) -> Result<i128, VaultError> {
+        Self::require_init(&env)?;
+        if assets <= 0 {
+            return Ok(0);
+        }
+        let total_shares: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalShares)
+            .unwrap_or(0);
+        let total_assets: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalAssets)
+            .unwrap_or(0);
+        if total_shares == 0 || total_assets == 0 {
+            return Ok(assets);
+        }
+        let numerator = assets * total_shares;
+        Ok((numerator + total_assets - 1) / total_assets)
+    }
+
+    fn convert_to_assets(env: Env, shares: i128) -> Result<i128, VaultError> {
+        Self::require_init(&env)?;
+        if shares <= 0 {
+            return Ok(0);
+        }
+        let total_shares: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalShares)
+            .unwrap_or(0);
+        let total_assets: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalAssets)
+            .unwrap_or(0);
+        if total_shares == 0 {
+            return Err(VaultError::ZeroSupply);
+        }
+        Ok((shares * total_assets) / total_shares)
+    }
+
+    fn preview_deposit(env: Env, assets: i128) -> Result<i128, VaultError> {
+        Self::require_init(&env)?;
+        if assets <= 0 {
+            return Err(VaultError::ZeroAmount);
+        }
+        let total_shares: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalShares)
+            .unwrap_or(0);
+        let total_assets: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalAssets)
+            .unwrap_or(0);
+        if total_shares == 0 || total_assets == 0 {
+            return Ok(assets);
+        }
+        let numerator = assets * total_shares;
+        Ok((numerator + total_assets - 1) / total_assets)
+    }
+
+    fn preview_withdraw(env: Env, shares: i128) -> Result<i128, VaultError> {
+        Self::require_init(&env)?;
+        if shares <= 0 {
+            return Err(VaultError::ZeroAmount);
+        }
+        let total_shares: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalShares)
+            .unwrap_or(0);
+        if total_shares == 0 {
+            return Err(VaultError::ZeroSupply);
+        }
+        let total_assets: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalAssets)
+            .unwrap_or(0);
+        Ok((shares * total_assets) / total_shares)
+    }
+
+    fn preview_redeem(env: Env, assets: i128) -> Result<i128, VaultError> {
+        Self::require_init(&env)?;
+        if assets <= 0 {
+            return Err(VaultError::ZeroAmount);
+        }
+        let total_shares: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalShares)
+            .unwrap_or(0);
+        let total_assets: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalAssets)
+            .unwrap_or(0);
+        if total_shares == 0 || total_assets == 0 {
+            return Ok(assets);
+        }
+        let numerator = assets * total_shares;
+        Ok((numerator + total_assets - 1) / total_assets)
+    }
+
+    fn share_price(env: Env) -> Result<i128, VaultError> {
+        Self::require_init(&env)?;
+        let total_shares: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalShares)
+            .unwrap_or(0);
+        if total_shares == 0 {
+            return Ok(1_000_000_000_000_000_000i128);
+        }
+        let total_assets: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalAssets)
+            .unwrap_or(0);
+        Ok((total_assets * 1_000_000_000_000_000_000i128) / total_shares)
     }
 }
 
@@ -718,7 +931,7 @@ mod tests {
         let user = Address::generate(&env);
         mint_tokens(&env, &token_addr, &token_admin, &user, 1000);
 
-        let shares = client.deposit(&user, &1000);
+        let shares = client.deposit(&user, &1000, &1000);
         assert_eq!(shares, 1000); // 1:1 for first deposit
         assert_eq!(client.get_shares(&user), 1000);
         assert_eq!(client.total_shares(), 1000);
@@ -734,8 +947,8 @@ mod tests {
         mint_tokens(&env, &token_addr, &token_admin, &user1, 1000);
         mint_tokens(&env, &token_addr, &token_admin, &user2, 500);
 
-        client.deposit(&user1, &1000);
-        let shares2 = client.deposit(&user2, &500);
+        client.deposit(&user1, &1000, &1000);
+        let shares2 = client.deposit(&user2, &500, &500);
 
         assert_eq!(shares2, 500); // proportional to existing ratio
         assert_eq!(client.total_shares(), 1500);
@@ -749,7 +962,7 @@ mod tests {
 
         mint_tokens(&env, &token_addr, &token_admin, &contract_wallet, 1000);
 
-        let shares = client.deposit(&contract_wallet, &1000);
+        let shares = client.deposit(&contract_wallet, &1000, &1000);
         assert_eq!(shares, 1000);
         assert_eq!(client.get_shares(&contract_wallet), 1000);
     }
@@ -759,7 +972,7 @@ mod tests {
     fn test_deposit_zero_panics() {
         let (env, client, _, _, _) = setup_env();
         let user = Address::generate(&env);
-        client.deposit(&user, &0);
+        client.deposit(&user, &0, &0);
     }
 
     #[test]
@@ -768,7 +981,7 @@ mod tests {
         let user = Address::generate(&env);
         mint_tokens(&env, &token_addr, &token_admin, &user, 1000);
 
-        client.deposit(&user, &1000);
+        client.deposit(&user, &1000, &1000);
         let amount = client.withdraw(&user, &500);
 
         assert_eq!(amount, 500);
@@ -784,7 +997,7 @@ mod tests {
         let user = Address::generate(&env);
         mint_tokens(&env, &token_addr, &token_admin, &user, 1000);
 
-        client.deposit(&user, &1000);
+        client.deposit(&user, &1000, &1000);
         client.withdraw(&user, &2000);
     }
 
@@ -795,7 +1008,7 @@ mod tests {
         let user = Address::generate(&env);
         mint_tokens(&env, &token_addr, &token_admin, &user, 1000);
 
-        client.deposit(&user, &1000);
+        client.deposit(&user, &1000, &1000);
         client.withdraw(&user, &0);
     }
 
@@ -806,7 +1019,7 @@ mod tests {
         let target_pool = Address::generate(&env);
 
         mint_tokens(&env, &token_addr, &token_admin, &user, 1000);
-        client.deposit(&user, &1000);
+        client.deposit(&user, &1000, &1000);
 
         client.rebalance(&admin, &target_pool, &300);
 
@@ -824,7 +1037,7 @@ mod tests {
         let impostor = Address::generate(&env);
 
         mint_tokens(&env, &token_addr, &token_admin, &user, 1000);
-        client.deposit(&user, &1000);
+        client.deposit(&user, &1000, &1000);
 
         client.rebalance(&impostor, &target, &100);
     }
@@ -837,7 +1050,7 @@ mod tests {
 
         // Deposit
         mint_tokens(&env, &token_addr, &token_admin, &user, 5000);
-        client.deposit(&user, &5000);
+        client.deposit(&user, &5000, &5000);
         assert_eq!(client.get_shares(&user), 5000);
 
         // Rebalance some to pool
@@ -902,7 +1115,7 @@ mod fuzz_tests {
             let user = Address::generate(&env);
             mint_tokens(&env, &token_addr, &user, amount);
 
-            client.deposit(&user, &amount);
+            client.deposit(&user, &amount, &amount);
 
             prop_assert!(client.total_shares() > 0);
             prop_assert!(client.total_assets() > 0);
@@ -919,7 +1132,7 @@ mod fuzz_tests {
             let user = Address::generate(&env);
             mint_tokens(&env, &token_addr, &user, amount);
 
-            let shares = client.deposit(&user, &amount);
+            let shares = client.deposit(&user, &amount, &amount);
 
             prop_assert_eq!(shares, amount);
             prop_assert_eq!(client.total_shares(), client.total_assets());
@@ -936,7 +1149,7 @@ mod fuzz_tests {
             let user = Address::generate(&env);
             mint_tokens(&env, &token_addr, &user, amount);
 
-            let shares = client.deposit(&user, &amount);
+            let shares = client.deposit(&user, &amount, &amount);
             let withdrawn = client.withdraw(&user, &shares);
 
             prop_assert_eq!(withdrawn, amount);
@@ -960,8 +1173,8 @@ mod fuzz_tests {
             mint_tokens(&env, &token_addr, &user1, amount1);
             mint_tokens(&env, &token_addr, &user2, amount2);
 
-            let shares1 = client.deposit(&user1, &amount1);
-            let shares2 = client.deposit(&user2, &amount2);
+            let shares1 = client.deposit(&user1, &amount1, &amount1);
+            let shares2 = client.deposit(&user2, &amount2, &amount2);
 
             prop_assert_eq!(client.total_shares(), shares1 + shares2);
             prop_assert_eq!(client.total_assets(), amount1 + amount2);
@@ -988,7 +1201,7 @@ mod fuzz_tests {
             let target = Address::generate(&env);
 
             mint_tokens(&env, &token_addr, &user, deposit_amount);
-            client.deposit(&user, &deposit_amount);
+            client.deposit(&user, &deposit_amount, &deposit_amount);
 
             let rebalance_amount = (deposit_amount * rebalance_pct as i128) / 100;
             if rebalance_amount > 0 {
@@ -1021,10 +1234,10 @@ mod fuzz_tests {
             mint_tokens(&env, &token_addr, &user1, amount1);
             mint_tokens(&env, &token_addr, &user2, amount2);
 
-            client.deposit(&user1, &amount1);
+            client.deposit(&user1, &amount1, &amount1);
             let price_before = (client.total_assets() * 1_000_000_000) / client.total_shares();
 
-            client.deposit(&user2, &amount2);
+            client.deposit(&user2, &amount2, &amount2);
             let price_after = (client.total_assets() * 1_000_000_000) / client.total_shares();
 
             prop_assert!(

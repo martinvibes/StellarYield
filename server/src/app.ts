@@ -1,8 +1,11 @@
 import cors from "cors";
 import express, { Request, Response } from "express";
 import rateLimit from "express-rate-limit";
+import { createYoga } from "graphql-yoga";
 import { predictApy, HistoricalDataPoint } from "./analytics/apyPredictor";
 import { signFeeBump } from "./relayer/relayer";
+import { context } from "./graphql/context";
+import { graphqlSchema } from "./graphql/schema";
 import yieldsRouter from "./routes/yields";
 import leaderboardRouter from "./routes/leaderboard";
 import notificationsRouter from "./routes/notifications";
@@ -43,9 +46,16 @@ async function loadPrismaClient(): Promise<EventsPrismaClient | null> {
 
 export function createApp() {
   const app = express();
+  const yoga = createYoga({
+    schema: graphqlSchema,
+    context: () => context,
+    graphqlEndpoint: "/api/graphql",
+    graphiql: true,
+  });
 
   app.use(cors());
   app.use(express.json());
+  app.use(yoga.graphqlEndpoint, yoga);
 
   const relayerLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,

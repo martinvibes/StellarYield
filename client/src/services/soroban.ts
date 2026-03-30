@@ -256,6 +256,8 @@ export interface ZapDepositParams {
   amountIn: bigint;
   /** Minimum vault-token amount after swap; enforces slippage on-chain. */
   minAmountOut: bigint;
+  /** Minimum shares to mint in vault deposit_for. */
+  minSharesOut: bigint;
 }
 
 /**
@@ -279,6 +281,7 @@ export async function zapDeposit(
       new StellarSdk.Address(params.vaultContractId).toScVal(),
       StellarSdk.nativeToScVal(params.amountIn, { type: "i128" }),
       StellarSdk.nativeToScVal(params.minAmountOut, { type: "i128" }),
+      StellarSdk.nativeToScVal(params.minSharesOut, { type: "i128" }),
     ],
     onStatus,
     useFeeBump
@@ -297,6 +300,7 @@ export async function zapDeposit(
 export async function deposit(
   userAddress: string,
   amount: bigint,
+  minSharesOut: bigint,
   onStatus?: (status: TxStatus) => void,
   useFeeBump: boolean = true,
   signTx?: (xdr: string, networkPassphrase: string) => Promise<string>,
@@ -307,6 +311,7 @@ export async function deposit(
     [
       new StellarSdk.Address(userAddress).toScVal(),
       StellarSdk.nativeToScVal(amount, { type: "i128" }),
+      StellarSdk.nativeToScVal(minSharesOut, { type: "i128" }),
     ],
     onStatus,
     useFeeBump,
