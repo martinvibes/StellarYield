@@ -20,7 +20,7 @@ export async function startHealthMonitor() {
       if (issues.length > 0) {
         await sendAlert(issues.join("\n"), "HIGH");
       }
-    } catch (_error) {
+    } catch {
       await sendAlert("🚨 BACKEND API IS UNREACHABLE!", "CRITICAL");
     }
   }, CHECK_INTERVAL);

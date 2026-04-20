@@ -187,7 +187,7 @@ fn token_transfer_from(env: &Env, token: &Address, from: &Address, to: &Address,
     args.push_back(from.clone().into_val(env));
     args.push_back(to.clone().into_val(env));
     args.push_back(amount.into_val(env));
-    env.invoke_contract::<()>(&token, &symbol_short!("transfer"), args);
+    env.invoke_contract::<()>(token, &symbol_short!("transfer"), args);
 }
 fn token_transfer(env: &Env, token: &Address, to: &Address, amount: i128) {
     // transfer from contract (self) to `to`
@@ -196,17 +196,18 @@ fn token_transfer(env: &Env, token: &Address, to: &Address, amount: i128) {
     args.push_back(from.into_val(env));
     args.push_back(to.clone().into_val(env));
     args.push_back(amount.into_val(env));
-    env.invoke_contract::<()>(&token, &symbol_short!("transfer"), args);
+    env.invoke_contract::<()>(token, &symbol_short!("transfer"), args);
 }
 fn token_balance_of(env: &Env, token: &Address, owner: &Address) -> i128 {
     let mut args: Vec<Val> = Vec::new(env);
     args.push_back(owner.clone().into_val(env));
-    env.invoke_contract::<i128>(&token, &symbol_short!("balance"), args)
+    env.invoke_contract::<i128>(token, &symbol_short!("balance"), args)
 }
 
 // -----------------------------
 // Core math: shares and exchange rate
 // -----------------------------
+#[allow(dead_code)]
 fn preview_mint_shares(env: &Env, deposit_amount: i128) -> i128 {
     let total_staked = read_total_staked(env);
     let total_shares = read_total_shares(env);
@@ -218,6 +219,7 @@ fn preview_mint_shares(env: &Env, deposit_amount: i128) -> i128 {
     deposit_amount * total_shares / total_staked
 }
 
+#[allow(dead_code)]
 fn preview_redeem_amount(env: &Env, share_amount: i128) -> i128 {
     let total_staked = read_total_staked(env);
     let total_shares = read_total_shares(env);

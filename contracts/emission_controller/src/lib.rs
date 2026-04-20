@@ -94,6 +94,7 @@ const SCALE: i128 = 10_000_000; // 1e7
 #[contract]
 pub struct EmissionController;
 
+#[allow(clippy::too_many_arguments)]
 #[contractimpl]
 impl EmissionController {
     /// Initialize the PID controller parameters.

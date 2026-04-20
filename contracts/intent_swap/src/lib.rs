@@ -105,6 +105,7 @@ pub enum SwapError {
 #[contract]
 pub struct IntentSwap;
 
+#[allow(clippy::too_many_arguments)]
 #[contractimpl]
 impl IntentSwap {
     // ── Initialization ──────────────────────────────────────────────

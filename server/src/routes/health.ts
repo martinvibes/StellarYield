@@ -32,7 +32,7 @@ router.get("/", async (_req: Request, res: Response) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     status.database = "up";
-  } catch (_err) {
+  } catch {
     status.database = "down";
   }
 
@@ -50,7 +50,7 @@ router.get("/", async (_req: Request, res: Response) => {
     } else {
       status.indexer = "warning";
     }
-  } catch (_err) {
+  } catch {
     status.horizon = "down";
   }
 
