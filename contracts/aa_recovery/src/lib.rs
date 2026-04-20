@@ -178,12 +178,12 @@ impl RecoveryModule {
         }
 
         // Validate threshold
-        if threshold == 0 || threshold > guardians.len() as u32 {
+        if threshold == 0 || threshold > guardians.len() {
             return Err(RecoveryError::InvalidThreshold);
         }
 
         // Validate guardian count
-        if guardians.len() as u32 > MAX_GUARDIANS {
+        if guardians.len() > MAX_GUARDIANS {
             return Err(RecoveryError::MaxGuardiansReached);
         }
 
@@ -269,7 +269,7 @@ impl RecoveryModule {
             .get(&StorageKey::Guardians)
             .unwrap();
 
-        if guardians.len() as u32 >= MAX_GUARDIANS {
+        if guardians.len() >= MAX_GUARDIANS {
             return Err(RecoveryError::MaxGuardiansReached);
         }
 
@@ -350,7 +350,7 @@ impl RecoveryModule {
             .get(&StorageKey::GuardianThreshold)
             .unwrap();
 
-        if guardians.len() as u32 - 1 < threshold {
+        if guardians.len() - 1 < threshold {
             return Err(RecoveryError::CannotRemoveGuardian);
         }
 
@@ -403,7 +403,7 @@ impl RecoveryModule {
             .get(&StorageKey::Guardians)
             .unwrap();
 
-        if new_threshold == 0 || new_threshold > guardians.len() as u32 {
+        if new_threshold == 0 || new_threshold > guardians.len() {
             return Err(RecoveryError::InvalidThreshold);
         }
 
@@ -595,7 +595,7 @@ impl RecoveryModule {
             .instance()
             .set(&StorageKey::RecoveryRequest, &recovery_request);
 
-        let approval_count = recovery_request.guardian_approvals.len() as u32;
+        let approval_count = recovery_request.guardian_approvals.len();
 
         // Emit event
         env.events().publish(
@@ -723,7 +723,7 @@ impl RecoveryModule {
             .get(&StorageKey::GuardianThreshold)
             .unwrap();
 
-        let approval_count = recovery_request.guardian_approvals.len() as u32;
+        let approval_count = recovery_request.guardian_approvals.len();
         if approval_count < threshold {
             return Err(RecoveryError::InsufficientApprovals);
         }
@@ -897,7 +897,7 @@ impl RecoveryModule {
                     .get(&StorageKey::GuardianThreshold)
                     .unwrap_or(DEFAULT_GUARDIAN_THRESHOLD);
 
-                request.guardian_approvals.len() as u32 >= threshold
+                request.guardian_approvals.len() >= threshold
             }
             None => false,
         }

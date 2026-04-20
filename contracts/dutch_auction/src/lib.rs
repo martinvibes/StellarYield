@@ -110,6 +110,7 @@ const BPS_SCALE: i128 = 10_000;
 #[contract]
 pub struct DutchAuction;
 
+#[allow(clippy::too_many_arguments)]
 #[contractimpl]
 impl DutchAuction {
     // ── Initialization ──────────────────────────────────────────────
@@ -743,8 +744,8 @@ mod tests {
     #[should_panic(expected = "Error(Contract, #2)")]
     fn test_double_initialize_panics() {
         let (_, client, admin, fee_recipient, _, _) = setup_env();
-        let vault = Address::generate(&client.address.env());
-        let oracle = Address::generate(&client.address.env());
+        let vault = Address::generate(client.address.env());
+        let oracle = Address::generate(client.address.env());
         client.initialize(
             &admin,
             &vault,
@@ -893,7 +894,7 @@ mod tests {
         // Penalty = 525 * 500 / 10000 = 26 (5%)
         // Total from buyer = 525 + 26 = 551
 
-        let (coll_received, debt_paid) = client.buy_collateral(
+        let (coll_received, _debt_paid) = client.buy_collateral(
             &liquidator,
             &auction_id,
             &500,
