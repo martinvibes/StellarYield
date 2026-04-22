@@ -3,12 +3,18 @@
  *
  * Unit tests for the vesting helper utilities.
  * Target: ≥ 90 % coverage on `formatTokens`, `vestedPercent`, `claimedPercent`.
+ *
+ * Note: `fetchVestingSchedule` and `claimVested` perform live Soroban RPC calls
+ * and Freighter wallet interactions — they are covered by integration tests.
+ * The smoke tests below confirm their early-return (no-config) behaviour.
  */
 import { describe, it, expect } from "vitest";
 import {
     formatTokens,
     vestedPercent,
     claimedPercent,
+    fetchVestingSchedule,
+    claimVested,
     type VestingSchedule,
 } from "./vestingService";
 
@@ -103,5 +109,36 @@ describe("claimedPercent", () => {
 
     it("returns 0 when total allocation is 0", () => {
         expect(claimedPercent(makeSchedule(0n, 0n, 0n))).toBe(0);
+    });
+});
+
+// ── Async smoke tests (no contract ID configured) ─────────────────────────
+//
+// VITE_VESTING_CONTRACT_ID is not set in the test environment, so both
+// async functions return immediately from their early-return guard.
+// These tests verify that the guards behave correctly and do not throw.
+
+describe("fetchVestingSchedule (no contract configured)", () => {
+    it("returns null without throwing when no contract ID is set", async () => {
+        const result = await fetchVestingSchedule("GADDRTEST0000000000000000000000000000000");
+        expect(result).toBeNull();
+    });
+
+    it("returns null for an empty wallet address", async () => {
+        const result = await fetchVestingSchedule("");
+        expect(result).toBeNull();
+    });
+});
+
+describe("claimVested (no contract configured)", () => {
+    it("returns a failure result without throwing when no contract ID is set", async () => {
+        const result = await claimVested("GADDRTEST0000000000000000000000000000000");
+        expect(result.success).toBe(false);
+        expect(result.error).toBeTruthy();
+    });
+
+    it("error message mentions the contract is not configured", async () => {
+        const result = await claimVested("GADDRTEST0000000000000000000000000000000");
+        expect(result.error).toMatch(/not configured/i);
     });
 });

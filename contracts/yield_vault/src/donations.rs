@@ -64,7 +64,7 @@ impl YieldVault {
     ) -> Result<(), VaultError> {
         user.require_auth();
 
-        if bps < 0 || bps > BPS_DENOMINATOR {
+        if !(0..=BPS_DENOMINATOR).contains(&bps) {
             return Err(VaultError::InvalidDonationBps);
         }
 
