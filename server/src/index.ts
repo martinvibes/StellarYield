@@ -6,7 +6,6 @@ import { startHealthMonitor } from "./monitoring/healthMonitor";
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { metricsMiddleware, getMetrics } from './middleware/metrics';
-import rateLimit from 'express-rate-limit';
 
 const app = createApp();
 app.use(cors());
